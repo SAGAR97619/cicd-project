@@ -10,7 +10,7 @@ pipeline {
     environment {
         DOCKERHUB_CREDENTIALS = credentials('dockerhub-creds')      // Jenkins credential ID (username+password)
         DOCKERHUB_USER        = 'sagarsaini9761'
-        IMAGE_NAME            = "${DOCKERHUB_USER}/myapp"
+        IMAGE_NAME            = "${DOCKERHUB_USER}/cicd-project"
         IMAGE_TAG             = "${env.BUILD_NUMBER}"
         EC2_SSH_CRED          = 'ec2-ssh-key'                       // Jenkins credential ID (SSH private key)
         EC2_HOST              = 'ubuntu@13.61.114.203'
