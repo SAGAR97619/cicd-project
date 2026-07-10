@@ -8,86 +8,86 @@ pipeline {
     }
 
     environment {
-        DOCKERHUB_CREDENTIALS = credentials('dockerhub-creds')      // Jenkins credential ID (username+password)
-        DOCKERHUB_USER        = 'sagarsaini9761'
-        IMAGE_NAME            = "${DOCKERHUB_USER}/cicd-project"
-        IMAGE_TAG             = "${env.BUILD_NUMBER}"
-        EC2_SSH_CRED          = 'ec2-ssh-key'                       // Jenkins credential ID (SSH private key)
-        EC2_HOST              = 'ubuntu@13.61.114.203'
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub-creds')
+        DOCKERHUB_USER = 'sagarsaini9761'
+        IMAGE_NAME = "${DOCKERHUB_USER}/cicd-project"
+        IMAGE_TAG = "${BUILD_NUMBER}"
     }
 
     stages {
 
         stage('Checkout') {
             steps {
-                echo "Pulling latest code from GitHub..."
                 checkout scm
             }
         }
 
-        stage('Install & Unit Test') {
+        stage('Install Dependencies & Test') {
             steps {
-                echo "Setting up virtualenv and running tests..."
                 sh '''
                     python3 -m venv venv
                     . venv/bin/activate
-                    pip install --no-cache-dir -r app/requirements.txt
-                    pip install --no-cache-dir pytest
-                    cd app && python -m pytest test_app.py -v
+                    pip install --upgrade pip
+                    pip install -r app/requirements.txt
+                    pip install pytest
+                    cd app
+                    pytest test_app.py -v
                 '''
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                echo "Building Docker image ${IMAGE_NAME}:${IMAGE_TAG}..."
-                sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} -t ${IMAGE_NAME}:latest ."
+                sh '''
+                    docker build \
+                    -t ${IMAGE_NAME}:${IMAGE_TAG} \
+                    -t ${IMAGE_NAME}:latest .
+                '''
             }
         }
 
-        stage('Push to Docker Hub') {
+        stage('Push Docker Image') {
             steps {
-                echo "Pushing image to Docker Hub..."
                 sh '''
-                    echo "$DOCKERHUB_CREDENTIALS_PSW" | docker login -u "$DOCKERHUB_CREDENTIALS_USR" --password-stdin
+                    echo "$DOCKERHUB_CREDENTIALS_PSW" | docker login \
+                    -u "$DOCKERHUB_CREDENTIALS_USR" --password-stdin
+
                     docker push ${IMAGE_NAME}:${IMAGE_TAG}
                     docker push ${IMAGE_NAME}:latest
                 '''
             }
         }
 
-        stage('Deploy to EC2') {
+        stage('Deploy') {
             steps {
-                echo "Deploying container to AWS EC2..."
-                sshagent(credentials: [EC2_SSH_CRED]) {
-                    sh '''
-                        ssh -o StrictHostKeyChecking=no ${EC2_HOST} \
-                        "IMAGE_TAG=${IMAGE_TAG} DOCKERHUB_USER=${DOCKERHUB_USER} bash -s" < scripts/deploy.sh
-                    '''
-                }
+                sh '''
+                    IMAGE_TAG=${IMAGE_TAG} \
+                    DOCKERHUB_USER=${DOCKERHUB_USER} \
+                    bash scripts/deploy.sh
+                '''
             }
         }
 
-        stage('Post-Deploy Health Check') {
+        stage('Health Check') {
             steps {
-                echo "Verifying deployment health..."
-                sshagent(credentials: [EC2_SSH_CRED]) {
-                    sh '''
-                        ssh -o StrictHostKeyChecking=no ${EC2_HOST} \
-                        "curl -sf http://localhost/health || exit 1"
-                    '''
-                }
+                sh '''
+                    sleep 10
+                    curl -f http://localhost:5000/health
+                '''
             }
         }
     }
 
     post {
+
         success {
-            echo "✅ Pipeline succeeded. Deployed ${IMAGE_NAME}:${IMAGE_TAG} to EC2."
+            echo "Deployment Successful"
         }
+
         failure {
-            echo "❌ Pipeline failed. Check logs above for the failing stage."
+            echo "Deployment Failed"
         }
+
         always {
             sh 'docker logout || true'
             cleanWs()
